@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "esbuild src/lib/solver.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp-solver-test.mjs && node node_modules/.tmp-solver-test.mjs"
+    "test": "esbuild src/lib/solver.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp-solver-test.mjs && node node_modules/.tmp-solver-test.mjs && esbuild src/lib/terms.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp-terms-test.mjs && node node_modules/.tmp-terms-test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

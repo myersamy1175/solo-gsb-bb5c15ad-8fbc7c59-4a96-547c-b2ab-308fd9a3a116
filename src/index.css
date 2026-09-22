@@ -423,6 +423,134 @@ input[type='number'] {
   color: var(--muted);
 }
 
+/* 术语检查 */
+.step-num.alt {
+  background: #7c6cf0;
+}
+
+select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.term-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+.term-table th,
+.term-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.term-table th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.term-table tr.clickable {
+  cursor: pointer;
+}
+
+.term-table tr.clickable:hover {
+  background: rgba(79, 140, 255, 0.07);
+}
+
+.term-table tr.active {
+  background: rgba(79, 140, 255, 0.12);
+}
+
+.term-hits {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.term-hit-row {
+  display: grid;
+  grid-template-columns: 44px 96px 1fr auto auto;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.term-hit-row:last-child {
+  border-bottom: none;
+}
+
+.term-hit-row:hover {
+  background: rgba(79, 140, 255, 0.07);
+}
+
+.term-hit-row.conflict {
+  background: rgba(240, 169, 59, 0.06);
+}
+
+.term-hit-row .idx {
+  color: var(--muted);
+}
+
+.term-hit-row .t {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.term-hit-row .snippet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.term-hit-row .suggest {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+mark.mark-hit {
+  background: rgba(255, 209, 102, 0.28);
+  color: var(--moved-text);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+mark.mark-conflict {
+  background: rgba(240, 169, 59, 0.3);
+  color: var(--warn);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* 术语命中跳转后的字幕高亮 */
+.cue-row.flash {
+  animation: cue-flash 1.8s ease-out;
+}
+
+@keyframes cue-flash {
+  0% {
+    background: rgba(124, 108, 240, 0.55);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 @media (max-width: 900px) {
   .compare {
     grid-template-columns: 1fr;
@@ -441,5 +569,14 @@ input[type='number'] {
     grid-column: 3;
     grid-row: 1 / span 2;
     align-self: center;
+  }
+  .term-hit-row {
+    grid-template-columns: 36px 1fr auto;
+  }
+  .term-hit-row .t {
+    display: none;
+  }
+  .term-hit-row .snippet {
+    white-space: normal;
   }
 }

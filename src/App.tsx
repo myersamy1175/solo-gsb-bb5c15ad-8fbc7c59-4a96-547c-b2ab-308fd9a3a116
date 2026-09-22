@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
 import CompareView from './components/CompareView'
+import TermCheck from './components/TermCheck'
 import { formatSrt, msToSrtTime, parseSrt, SrtCue } from './lib/srt'
 import { solve, SolveResult, MAX_SELECTION, Settings, CueLock } from './lib/solver'
+import { GlossaryEntry, parseGlossary } from './lib/terms'
 import { loadJSON, saveJSON, STORAGE_KEYS, clearAll } from './lib/storage'
-import { SAMPLE_SRT } from './lib/sample'
+import { SAMPLE_GLOSSARY, SAMPLE_SRT, SAMPLE_TERMS_SRT } from './lib/sample'
 
 type Range = [number, number] | null
 
@@ -20,6 +22,12 @@ export default function App() {
   const [locks, setLocks] = useState<Record<number, CueLock>>(
     () => loadJSON<Record<number, CueLock>>(STORAGE_KEYS.locks) ?? {}
   )
+  // 术语表：与字幕文件相互独立，重新导入字幕后仍保留
+  const [glossary, setGlossary] = useState<GlossaryEntry[]>(
+    () => loadJSON<GlossaryEntry[]>(STORAGE_KEYS.glossary) ?? []
+  )
+  // 术语检查「点击命中」时跳转并短暂高亮的字幕下标
+  const [flashCue, setFlashCue] = useState<number | null>(null)
   const [result, setResult] = useState<SolveResult | null>(null)
   const [parseWarnings, setParseWarnings] = useState<string[]>([])
   const [confirmed, setConfirmed] = useState(false)
@@ -52,6 +60,30 @@ export default function App() {
     setResult(null)
     setConfirmed(false)
   }, [])
+
+  const persistGlossary = useCallback((g: GlossaryEntry[]) => {
+    setGlossary(g)
+    saveJSON(STORAGE_KEYS.glossary, g)
+  }, [])
+
+  // 术语检查：点击命中 → 滚动到对应字幕并短暂高亮
+  const jumpToCue = useCallback((idx: number) => {
+    setFlashCue(idx)
+    requestAnimationFrame(() => {
+      document.getElementById(`cue-row-${idx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    window.setTimeout(() => setFlashCue((cur) => (cur === idx ? null : cur)), 1800)
+  }, [])
+
+  // 术语演示：载入含误写的示例字幕 + 示例术语表
+  const loadTermDemo = useCallback(() => {
+    persistGlossary(parseGlossary(SAMPLE_GLOSSARY).entries)
+    setParseWarnings([])
+    persistSource(SAMPLE_TERMS_SRT)
+    persistRange(null)
+    persistLocks({})
+    setResult(null)
+  }, [persistGlossary, persistSource, persistRange, persistLocks])
 
   const toggleLock = useCallback(
     (idx: number, kind: keyof CueLock) => {
@@ -169,6 +201,7 @@ export default function App() {
         <h1>字幕节奏修复</h1>
         <p className="sub">
           导入 SRT → 选择至多 {MAX_SELECTION} 条连续字幕 → 设置节奏参数（可选锚点锁定）→ 最小化边界移动量求解。
+          术语检查模块可全片扫描别名与同音误写并导出替换预览 JSON（只读）。
           文字内容与顺序、片段总起止时间及锁定项保持不变，所有数据仅保存在本浏览器。
         </p>
       </header>
@@ -198,6 +231,7 @@ export default function App() {
                 setSource('')
                 persistRange(null)
                 persistLocks({})
+                persistGlossary([])
                 setResult(null)
                 setParseWarnings([])
               }}
@@ -230,7 +264,8 @@ export default function App() {
               return (
                 <div
                   key={i}
-                  className={`cue-row${inRange ? ' selected' : ''}`}
+                  id={`cue-row-${i}`}
+                  className={`cue-row${inRange ? ' selected' : ''}${flashCue === i ? ' flash' : ''}`}
                   onClick={() => toggleCue(i)}
                 >
                   <span className="idx">{i + 1}</span>
@@ -303,6 +338,15 @@ export default function App() {
           )}
         </section>
       )}
+
+      {/* 术语检查：全片扫描，只读预览 */}
+      <TermCheck
+        cues={parsed.cues}
+        glossary={glossary}
+        onGlossaryChange={persistGlossary}
+        onJumpToCue={jumpToCue}
+        onLoadDemo={loadTermDemo}
+      />
 
       {/* 第三步：参数 */}
       {range && (
