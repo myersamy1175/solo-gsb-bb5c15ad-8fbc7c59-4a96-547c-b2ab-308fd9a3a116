@@ -1,13 +1,38 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import CompareView from './components/CompareView'
+import TermCheck, { JumpTarget } from './components/TermCheck'
 import { formatSrt, msToSrtTime, parseSrt, SrtCue } from './lib/srt'
 import { solve, SolveResult, MAX_SELECTION, Settings, CueLock } from './lib/solver'
 import { loadJSON, saveJSON, STORAGE_KEYS, clearAll } from './lib/storage'
+import { charsOf } from './lib/text'
 import { SAMPLE_SRT } from './lib/sample'
 
 type Range = [number, number] | null
 
 const DEFAULT_SETTINGS: Settings = { cps: 17, maxChars: 18, gapMs: 120 }
+
+/** 按码点区间渲染一行字幕，命中间隔加术语高亮（区间可重叠） */
+function HighlightedLine({ line, ranges }: { line: string; ranges?: Array<{ start: number; end: number }> }) {
+  if (!ranges || ranges.length === 0) return <>{line}</>
+  const chars = charsOf(line)
+  const marked = new Array<boolean>(chars.length).fill(false)
+  for (const r of ranges) {
+    for (let k = Math.max(0, r.start); k < Math.min(chars.length, r.end); k++) marked[k] = true
+  }
+  return (
+    <>
+      {chars.map((ch, k) =>
+        marked[k] ? (
+          <span key={k} className="term-hit">
+            {ch}
+          </span>
+        ) : (
+          <span key={k}>{ch}</span>
+        )
+      )}
+    </>
+  )
+}
 
 export default function App() {
   const [source, setSource] = useState<string>(() => loadJSON<string>(STORAGE_KEYS.source) ?? '')
@@ -23,6 +48,19 @@ export default function App() {
   const [result, setResult] = useState<SolveResult | null>(null)
   const [parseWarnings, setParseWarnings] = useState<string[]>([])
   const [confirmed, setConfirmed] = useState(false)
+  // 术语检查：术语表与内置同音词库开关（独立模块，不参与节奏修复）
+  const [glossaryText, setGlossaryText] = useState<string>(
+    () => loadJSON<string>(STORAGE_KEYS.glossary) ?? ''
+  )
+  const [glossaryName, setGlossaryName] = useState<string | null>(
+    () => loadJSON<string>(STORAGE_KEYS.glossaryName)
+  )
+  const [builtinEnabled, setBuiltinEnabled] = useState<boolean>(
+    () => loadJSON<boolean>(STORAGE_KEYS.builtinTerms) ?? true
+  )
+  // 术语命中跳转后的高亮目标
+  const [termHighlight, setTermHighlight] = useState<JumpTarget | null>(null)
+  const cueRowRefs = useRef<Array<HTMLDivElement | null>>([])
 
   const parsed = useMemo(() => (source ? parseSrt(source) : { cues: [], warnings: [] }), [source])
 
@@ -35,6 +73,7 @@ export default function App() {
     setRange(r)
     setResult(null)
     setConfirmed(false)
+    setTermHighlight(null)
     if (r) saveJSON(STORAGE_KEYS.selection, r)
     else localStorage.removeItem(STORAGE_KEYS.selection)
   }, [])
@@ -73,7 +112,31 @@ export default function App() {
     persistRange(null)
     persistLocks({})
     setResult(null)
+    setTermHighlight(null)
   }
+
+  const persistGlossary = useCallback((text: string, name: string | null) => {
+    setGlossaryText(text)
+    setGlossaryName(name)
+    saveJSON(STORAGE_KEYS.glossary, text)
+    if (name) saveJSON(STORAGE_KEYS.glossaryName, name)
+    else localStorage.removeItem(STORAGE_KEYS.glossaryName)
+    setTermHighlight(null)
+  }, [])
+
+  const persistBuiltin = useCallback((v: boolean) => {
+    setBuiltinEnabled(v)
+    saveJSON(STORAGE_KEYS.builtinTerms, v)
+    setTermHighlight(null)
+  }, [])
+
+  // 术语命中：滚动到第 2 步字幕列表对应条目，并在行内高亮命中码点
+  const jumpToTerm = useCallback((t: JumpTarget) => {
+    setTermHighlight(t)
+    requestAnimationFrame(() => {
+      cueRowRefs.current[t.cueIndex]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [])
 
   const selectedCues: SrtCue[] = useMemo(() => {
     if (!range) return []
@@ -200,6 +263,9 @@ export default function App() {
                 persistLocks({})
                 setResult(null)
                 setParseWarnings([])
+                setGlossaryText('')
+                setGlossaryName(null)
+                setTermHighlight(null)
               }}
             >
               清空
@@ -227,17 +293,30 @@ export default function App() {
             {parsed.cues.map((c, i) => {
               const inRange = !!range && i >= range[0] && i <= range[1]
               const lk = locks[i]
+              const hl = termHighlight?.cueIndex === i ? termHighlight : null
               return (
                 <div
                   key={i}
-                  className={`cue-row${inRange ? ' selected' : ''}`}
+                  ref={(el) => {
+                    cueRowRefs.current[i] = el
+                  }}
+                  className={`cue-row${inRange ? ' selected' : ''}${hl ? ' term-jump' : ''}`}
                   onClick={() => toggleCue(i)}
                 >
                   <span className="idx">{i + 1}</span>
                   <span className="t">
                     {msToSrtTime(c.startMs)} → {msToSrtTime(c.endMs)}
                   </span>
-                  <span>{c.lines.join(' ')}</span>
+                  <span className="cue-lines">
+                    {c.lines.map((ln, li) => (
+                      <span key={li} className="cue-line">
+                        <HighlightedLine
+                          line={ln}
+                          ranges={hl?.ranges.filter((r) => r.line === li)}
+                        />
+                      </span>
+                    ))}
+                  </span>
                   <span className="lock-cell" onClick={(e) => e.stopPropagation()}>
                     {inRange ? (
                       <>
@@ -302,6 +381,27 @@ export default function App() {
             </p>
           )}
         </section>
+      )}
+
+      {/* 术语检查：只读独立模块，不影响选区与求解 */}
+      {parsed.cues.length > 0 && (
+        <TermCheck
+          cues={parsed.cues}
+          glossaryText={glossaryText}
+          glossaryName={glossaryName}
+          builtinEnabled={builtinEnabled}
+          onImportGlossary={persistGlossary}
+          onToggleBuiltin={persistBuiltin}
+          onClearGlossary={() => persistGlossary('', null)}
+          onJump={jumpToTerm}
+          onLoadSampleSrt={(srt) => {
+            persistSource(srt)
+            persistRange(null)
+            persistLocks({})
+            setResult(null)
+            setParseWarnings([])
+          }}
+        />
       )}
 
       {/* 第三步：参数 */}
